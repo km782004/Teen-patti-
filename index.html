@@ -1,0 +1,479 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teen Patti Money Calculator</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;font-family:Arial,sans-serif;
+ background:#101827;color:#fff;padding:18px
+}
+.container{max-width:750px;margin:auto}
+h1{text-align:center;color:#45dfa0}
+.card{
+ background:#1d2a3d;padding:16px;
+ border-radius:12px;margin:15px 0
+}
+input,select,button{
+ width:100%;padding:12px;margin:6px 0;
+ border:0;border-radius:7px;font-size:15px
+}
+input,select{background:#fff;color:#111}
+button{
+ background:#16a36d;color:#fff;
+ font-weight:bold;cursor:pointer
+}
+button:active{transform:scale(.97)}
+button.secondary{background:#34465e}
+button.danger{background:#b83c4a}
+.player{
+ background:#293950;padding:12px;
+ border-radius:8px;margin:10px 0
+}
+.small{font-size:13px;color:#c4cede}
+.result{color:#45dfa0;font-weight:bold}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:9px;border-bottom:1px solid #46546a;text-align:left}
+.scroll{overflow-x:auto}
+.money-buttons{
+ display:grid;
+ grid-template-columns:repeat(3,1fr);
+ gap:7px;margin-top:8px
+}
+.money-buttons button{
+ margin:0;padding:11px 5px;
+ background:#176b59;font-size:15px
+}
+.money-buttons button:last-child{
+ background:#b17a24
+}
+.amount-label{
+ color:#45dfa0;font-weight:bold;
+ margin-top:8px;display:block
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>♠ Teen Patti Calculator ♥</h1>
+<p style="text-align:center">
+Track contributions, winnings and final settlement
+</p>
+
+<div class="card">
+<h3>Players</h3>
+<div id="players"></div>
+<button onclick="saveNames()">Save Player Names</button>
+</div>
+
+<div class="card">
+<h3>New Round</h3>
+
+<p class="small">
+Add money using buttons or enter an amount manually.
+You can add money multiple times for the same player.
+</p>
+
+<div id="contributions"></div>
+
+<label>Round Winner</label>
+<select id="winner"></select>
+
+<button onclick="addRound()">Add Round</button>
+</div>
+
+<div class="card">
+<h3>Overall Balance</h3>
+
+<div class="scroll">
+<table>
+<thead>
+<tr>
+<th>Player</th>
+<th>Paid</th>
+<th>Won</th>
+<th>Net</th>
+</tr>
+</thead>
+<tbody id="balances"></tbody>
+</table>
+</div>
+
+<p class="small">
+Positive = Receives money | Negative = Pays money
+</p>
+
+<h3 id="pot">Total Pot: ₹0</h3>
+</div>
+
+<div class="card">
+<h3>Final Settlement</h3>
+<div id="settlement">No settlement yet.</div>
+</div>
+
+<div class="card">
+<h3>Round History</h3>
+<div id="history">No rounds played.</div>
+
+<button class="secondary" onclick="undoRound()">
+Undo Last Round
+</button>
+
+<button class="danger" onclick="resetGame()">
+Reset All Game Data
+</button>
+
+<button class="secondary" onclick="shareResult()">
+Share Results
+</button>
+</div>
+
+</div>
+
+<script>
+
+let names=[
+ "Player 1","Player 2","Player 3",
+ "Player 4","Player 5"
+];
+
+let rounds=[];
+
+try{
+ const saved=JSON.parse(localStorage.getItem("teenPattiGame"));
+ if(saved){
+  names=saved.names||names;
+  rounds=saved.rounds||[];
+ }
+}catch(e){}
+
+function save(){
+ localStorage.setItem(
+  "teenPattiGame",
+  JSON.stringify({names,rounds})
+ );
+}
+
+function escapeHTML(s){
+ return String(s).replace(/[&<>"']/g,c=>({
+  "&":"&amp;",
+  "<":"&lt;",
+  ">":"&gt;",
+  '"':"&quot;",
+  "'":"&#39;"
+ }[c]));
+}
+
+// Render players and contribution buttons
+
+function render(){
+
+ document.getElementById("players").innerHTML=
+ names.map((n,i)=>`
+ <div class="player">
+ Player ${i+1}
+ <input
+  id="name${i}"
+  maxlength="20"
+  value="${escapeHTML(n)}"
+ >
+ </div>
+ `).join("");
+
+ document.getElementById("contributions").innerHTML=
+ names.map((n,i)=>`
+ <div class="player">
+
+ <b>${escapeHTML(n)}</b>
+
+ <span class="amount-label">
+ Current Contribution
+ </span>
+
+ <input
+  type="number"
+  min="0"
+  step="0.01"
+  id="amount${i}"
+  placeholder="Contribution ₹"
+  value="0"
+ >
+
+ <div class="money-buttons">
+
+ <button onclick="addMoney(${i},1)">+1</button>
+ <button onclick="addMoney(${i},2)">+2</button>
+ <button onclick="addMoney(${i},4)">+4</button>
+ <button onclick="addMoney(${i},5)">+5</button>
+ <button onclick="addMoney(${i},10)">+10</button>
+ <button onclick="addMoney(${i},50)">+50</button>
+
+ </div>
+
+ <button class="secondary"
+ onclick="clearMoney(${i})">
+ Clear Amount
+ </button>
+
+ </div>
+ `).join("");
+
+ document.getElementById("winner").innerHTML=
+ names.map((n,i)=>`
+ <option value="${i}">${escapeHTML(n)}</option>
+ `).join("");
+
+ update();
+}
+
+// Add money multiple times
+
+function addMoney(playerIndex,amount){
+
+ const input=document.getElementById(
+  "amount"+playerIndex
+ );
+
+ const current=Number(input.value)||0;
+
+ input.value=(current+amount).toFixed(2);
+
+}
+
+// Clear current contribution
+
+function clearMoney(playerIndex){
+
+ document.getElementById(
+  "amount"+playerIndex
+ ).value="0";
+
+}
+
+// Save names
+
+function saveNames(){
+
+ names=names.map((n,i)=>
+  document.getElementById("name"+i)
+  .value.trim()||`Player ${i+1}`
+ );
+
+ save();
+ render();
+
+}
+
+// Add new round
+
+function addRound(){
+
+ const amounts=names.map((n,i)=>
+  Number(document.getElementById("amount"+i).value)
+ );
+
+ if(amounts.some(a=>!Number.isFinite(a)||a<0)){
+  alert("Please enter valid contributions.");
+  return;
+ }
+
+ const pot=amounts.reduce((a,b)=>a+b,0);
+
+ if(pot<=0){
+  alert("Enter at least one contribution.");
+  return;
+ }
+
+ const winner=Number(
+  document.getElementById("winner").value
+ );
+
+ rounds.push({
+  amounts,
+  winner,
+  pot
+ });
+
+ save();
+ render();
+
+ alert("Round added successfully!");
+
+}
+
+// Calculate totals
+
+function totals(){
+
+ const paid=names.map((n,i)=>
+  rounds.reduce((s,r)=>s+(r.amounts[i]||0),0)
+ );
+
+ const won=names.map((n,i)=>
+  rounds.reduce((s,r)=>
+   s+(r.winner===i?r.pot:0),0)
+ );
+
+ return {
+  paid,
+  won,
+  net:won.map((w,i)=>w-paid[i])
+ };
+
+}
+
+// Update results
+
+function update(){
+
+ const {paid,won,net}=totals();
+
+ document.getElementById("balances").innerHTML=
+ names.map((n,i)=>`
+ <tr>
+ <td>${escapeHTML(n)}</td>
+ <td>₹${paid[i].toFixed(2)}</td>
+ <td>₹${won[i].toFixed(2)}</td>
+ <td class="${net[i]>=0?'result':''}">
+ ₹${net[i].toFixed(2)}
+ </td>
+ </tr>
+ `).join("");
+
+ document.getElementById("pot").textContent=
+ "Total Pot: ₹"+
+ paid.reduce((a,b)=>a+b,0).toFixed(2);
+
+ // Settlement
+
+ let debt=net.map((v,i)=>({
+  i,amount:-v
+ })).filter(x=>x.amount>0.005);
+
+ let credit=net.map((v,i)=>({
+  i,amount:v
+ })).filter(x=>x.amount>0.005);
+
+ let lines=[];
+ let d=0,c=0;
+
+ while(d<debt.length&&c<credit.length){
+
+  let amount=Math.min(
+   debt[d].amount,
+   credit[c].amount
+  );
+
+  lines.push(`
+  <p>
+  ${escapeHTML(names[debt[d].i])}
+  pays <b>₹${amount.toFixed(2)}</b> to
+  ${escapeHTML(names[credit[c].i])}
+  </p>
+  `);
+
+  debt[d].amount-=amount;
+  credit[c].amount-=amount;
+
+  if(debt[d].amount<0.005)d++;
+  if(credit[c].amount<0.005)c++;
+ }
+
+ document.getElementById("settlement").innerHTML=
+ lines.length?lines.join(""):"All players are settled.";
+
+ // Round history
+
+ document.getElementById("history").innerHTML=
+ rounds.length?rounds.map((r,i)=>`
+ <div class="player">
+ <b>Round ${i+1}</b><br>
+ Winner: ${escapeHTML(names[r.winner])}<br>
+ Pot: ₹${r.pot.toFixed(2)}<br>
+
+ <span class="small">
+ Contributions:
+ ${r.amounts.map((a,j)=>
+  escapeHTML(names[j])+": ₹"+a.toFixed(2)
+ ).join(" | ")}
+ </span>
+ </div>
+ `).join(""):"No rounds played.";
+
+}
+
+// Undo
+
+function undoRound(){
+
+ if(!rounds.length){
+  alert("No round to undo.");
+  return;
+ }
+
+ if(confirm("Undo the last round?")){
+  rounds.pop();
+  save();
+  render();
+ }
+
+}
+
+// Reset
+
+function resetGame(){
+
+ if(confirm("Delete all rounds and reset the game?")){
+  rounds=[];
+  save();
+  render();
+ }
+
+}
+
+// Share
+
+function shareResult(){
+
+ const {paid,won,net}=totals();
+
+ let textResult="Teen Patti Final Result\n";
+
+ names.forEach((n,i)=>{
+  textResult+=
+  `${n}: Paid ₹${paid[i].toFixed(2)}, `+
+  `Won ₹${won[i].toFixed(2)}, `+
+  `Net ₹${net[i].toFixed(2)}\n`;
+ });
+
+ textResult+="\nSettlement:\n"+
+ document.getElementById("settlement").innerText;
+
+ if(navigator.share){
+  navigator.share({
+   title:"Teen Patti Result",
+   text:textResult
+  }).catch(()=>{});
+ }
+ else if(navigator.clipboard){
+  navigator.clipboard.writeText(textResult)
+  .then(()=>alert("Results copied!"));
+ }
+ else{
+  alert(textResult);
+ }
+
+}
+
+render();
+
+</script>
+</body>
+  </html>
+  
